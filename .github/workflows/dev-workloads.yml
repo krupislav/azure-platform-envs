@@ -1,0 +1,68 @@
+# Terraform pipeline for dev WORKLOADS (AKS). Same identity and approvals as dev.yml,
+# its own folder and state file, so it never touches the network or Key Vault.
+#   PR to main   -> plan  (identity via fc-pr:      subject "...:pull_request")
+#   merge to main -> apply (identity via fc-env-dev: subject "...:environment:dev")
+# No passwords: GitHub issues a short-lived OIDC token, Azure trusts it because
+# the subject matches a federated credential on id-github-dev.
+
+name: dev-workloads
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ["envs/dev/workloads/**", "modules/workloads/**", ".github/workflows/dev-workloads.yml"]
+  push:
+    branches: [main]
+    paths: ["envs/dev/workloads/**", "modules/workloads/**", ".github/workflows/dev-workloads.yml"]
+
+permissions:
+  id-token: write
+  contents: read # checkout only
+
+# Never two runs on dev's state at once (the second one waits).
+concurrency:
+  group: tfstate-dev-workloads
+  cancel-in-progress: false
+
+env:
+  # Terraform's azurerm provider AND backend read these. IDs, not passwords,
+  # but kept as secrets so they don't show in the public logs.
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_USE_OIDC: "true" # log in with the GitHub token, not a client secret
+  TF_IN_AUTOMATION: "true"
+
+defaults:
+  run:
+    working-directory: envs/dev/workloads
+
+jobs:
+  plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.0 # same as on your PC
+
+      - run: terraform init -input=false
+      - run: terraform fmt -check -recursive ../../.. # fails the PR if code isn't formatted
+      - run: terraform validate
+      - run: terraform plan -input=false
+
+  apply:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.0
+
+      - run: terraform init -input=false
+      - run: terraform apply -input=false -auto-approve # the approval is the PR review + the environment rule

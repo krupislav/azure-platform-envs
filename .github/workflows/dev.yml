@@ -9,10 +9,10 @@ name: dev
 on:
   pull_request:
     branches: [main]
-    paths: ["envs/dev/**", "modules/**", ".github/workflows/dev.yml"]
+    paths: ["envs/dev/**", "!envs/dev/workloads/**", "modules/env/**", ".github/workflows/dev.yml"]
   push:
     branches: [main]
-    paths: ["envs/dev/**", "modules/**", ".github/workflows/dev.yml"]
+    paths: ["envs/dev/**", "!envs/dev/workloads/**", "modules/env/**", ".github/workflows/dev.yml"]
 
 permissions:
   id-token: write
