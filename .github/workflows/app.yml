@@ -1,0 +1,63 @@
+# CI for the platform test app.
+#   PR to main     -> test, build, scan. No Azure login, nothing pushed.
+#   merge to main  -> the same, then push to acrshared0 as id-github-acr
+#                     (federated credential fc-main: subject "...:ref:refs/heads/main").
+
+name: app
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ["app/**", ".github/workflows/app.yml"]
+  push:
+    branches: [main]
+    paths: ["app/**", ".github/workflows/app.yml"]
+
+permissions:
+  id-token: write # OIDC token for the Azure login (push only)
+  contents: read
+
+env:
+  REGISTRY: acrshared0.azurecr.io
+  IMAGE: platform-test-app
+  TAG: ${{ github.sha }}
+
+defaults:
+  run:
+    working-directory: app
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12" # same as the image
+
+      - run: pip install -r requirements-dev.txt
+      - run: pytest
+
+      - run: docker build -t "$REGISTRY/$IMAGE:$TAG" .
+
+      # Scans the image for known vulnerabilities (Grype).
+      - uses: anchore/scan-action@v7
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
+          severity-cutoff: critical
+          fail-build: true
+          output-format: table
+
+      # ---------- Only after the merge to main ----------
+      - if: github.event_name == 'push'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.ACR_CLIENT_ID }} # id-github-acr, NOT the dev identity
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - if: github.event_name == 'push'
+        run: |
+          az acr login --name acrshared0
+          docker push "$REGISTRY/$IMAGE:$TAG"
