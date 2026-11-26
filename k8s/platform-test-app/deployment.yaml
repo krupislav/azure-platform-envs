@@ -1,0 +1,49 @@
+# Deployment = "keep N copies of this container running". If a pod dies,
+# Kubernetes starts a new one. No pull secret: the nodes' kubelet identity
+# (id-aks-kubelet-dev) has AcrPull on acrshared0.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-test-app
+  namespace: platform-test-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-test-app # which pods belong to this Deployment
+  template:
+    metadata:
+      labels:
+        app: platform-test-app
+    spec:
+      containers:
+        - name: app
+          image: acrshared0.azurecr.io/platform-test-app:d8c5a9cfe628297f776afd93a470607b37436ffe
+          ports:
+            - containerPort: 8080
+
+          # Requests = what the scheduler reserves on the node; limits = the ceiling.
+          resources:
+            requests:
+              cpu: 50m       # 5% of one vCPU
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+
+          # Kubernetes calls these. Readiness: "send it traffic?" Liveness: "restart it?"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 20
+
+          securityContext:
+            runAsNonRoot: true           # refuse to start as root
+            runAsUser: 1000              # appuser's ID (useradd's first user); Kubernetes can only verify a number, not a name
+            allowPrivilegeEscalation: false

@@ -1,0 +1,15 @@
+# Service = a stable address in front of the pods (pods come and go, their IPs change).
+# type LoadBalancer: the control plane (id-aks-dev) adds a public IP + rule to the
+# "kubernetes" load balancer in MC_rg-dev-cc_aks-dev-cc_canadacentral.
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-test-app
+  namespace: platform-test-app
+spec:
+  type: LoadBalancer
+  selector:
+    app: platform-test-app
+  ports:
+    - port: 80
+      targetPort: 8080

@@ -1,0 +1,5 @@
+# Each app gets its own namespace: its own space for objects, access and quotas.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform-test-app
